@@ -247,6 +247,26 @@ This will:
 
 The `--test` option is ideal for CI pipelines and pre-commit validation.
 
+#### Deploying to Docker Swarm
+
+For production deployments with Docker Swarm:
+
+```shell
+cd docker
+./deploy-to-swarm.sh production
+```
+
+This will deploy the indexer and app services to your Swarm cluster using the latest images from Docker Hub. You can customize the deployment with various options:
+
+```shell
+./deploy-to-swarm.sh production \
+  --stack-name btc-stamps-prod \
+  --indexer-image btcstamps/indexer:1.8.26 \
+  --app-replicas 3
+```
+
+See [Docker Swarm Deployment Guide](docker/SWARM_DEPLOYMENT.md) for complete instructions.
+
 #### Troubleshooting Container Issues
 
 If you encounter problems with container execution:
