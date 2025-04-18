@@ -431,20 +431,19 @@ class CPBlocksPipeline:
                 # Reset error counter on successful fetch
                 consecutive_errors = 0
 
-                # Store fetched blocks in queue
+                # Store fetched blocks in queue, parsing CP issuances for each block
                 with self._lock:
                     blocks_added = 0
-                    for block_index, block_data in sorted(blocks_data.items()):
-                        if "issuances" in block_data:
-                            block_data["issuances"] = sorted(
-                                block_data["issuances"], key=lambda x: (x.get("message_index", 0) if x else 0)
-                            )
-                        else:
-                            block_data["issuances"] = []
-
-                        self.queue[block_index] = block_data
+                    for blk_idx, blk_data in sorted(blocks_data.items()):
+                        # Parse Counterparty stamp issuances for this block
+                        try:
+                            blk_data["issuances"] = parse_xcp_block_transactions([blk_data])
+                        except Exception as e:
+                            logger.error(f"Error parsing CP issuances for block {blk_idx}: {e}")
+                            blk_data["issuances"] = []
+                        self.queue[blk_idx] = blk_data
                         blocks_added += 1
-                        logger.debug(f"Added block {block_index} to queue")
+                        logger.debug(f"Added block {blk_idx} to pipeline queue with {len(blk_data['issuances'])} issuances")
 
                     # Update current_block to the highest fetched block + 1
                     if self.queue:
@@ -1063,6 +1062,10 @@ def parse_xcp_block_transactions(block_data):
         for tx in transactions:
             tx_hash = tx.get("tx_hash")
             tx_type = tx.get("transaction_type")
+
+            logger.debug(
+                "CP TX %s: transaction_type=%r, events=%s", tx_hash, tx_type, [e.get("event") for e in tx.get("events", [])]
+            )
             logger.debug(f"Processing transaction {tx_hash} of type {tx_type}")
 
             # Only process issuance transactions
@@ -1245,35 +1248,6 @@ def verify_cp_block_hash(block_index: int, expected_hash: str | None = None, max
 
     logger.error("Max retries reached in block hash verification")
     return False
-
-
-async def get_xcp_transactions_async(
-    block_index: int, cursor: Optional[str] = None, limit: int = 1000
-) -> Optional[Dict[str, Any]]:
-    """Async version of get_xcp_transactions."""
-    try:
-        endpoint = f"/blocks/{block_index}/transactions"
-        params = {"verbose": "true", "show_unconfirmed": "false", "limit": limit}
-
-        if cursor:
-            params["cursor"] = cursor
-
-        response = await fetch_xcp_async(endpoint, params=params)
-
-        if not response or not isinstance(response, dict):
-            logger.error(f"Invalid response format for block {block_index} transactions")
-            return None
-
-        result = response.get("result")
-        if not isinstance(result, list):
-            logger.error(f"No transactions found in response for block {block_index}")
-            return None
-
-        return {"result": result, "next_cursor": response.get("next_cursor"), "result_count": len(result)}
-
-    except Exception as e:
-        logger.error(f"Error getting transactions via XCP V2: {e}")
-        return None
 
 
 async def get_all_xcp_transactions(start_block: int, limit: int = 100) -> Optional[List[Dict[str, Any]]]:
